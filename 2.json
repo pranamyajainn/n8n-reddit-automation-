@@ -1,5 +1,5 @@
 {
-  "name": "Simplest Reddit Automation",
+  "name": "Updated Reddit Automation",
   "nodes": [
     {
       "parameters": {
@@ -60,6 +60,10 @@
             {
               "name": "created",
               "value": "={{ $json.created }}"
+            },
+            {
+              "name": "subreddit",
+              "value": "={{ 'r/' + $json.subreddit }}"
             }
           ]
         },
@@ -89,6 +93,19 @@
     },
     {
       "parameters": {
+        "jsCode": "for (const item of items) {\n  const text = (item.json.title + ' ' + item.json.body).toLowerCase();\n  let field = '';\n  if (text.includes('therapy') || text.includes('mental health')) {\n    field = 'Mental Health';\n  } else if (text.includes('fitness') || text.includes('trainer') || text.includes('coach')) {\n    field = 'Fitness';\n  } else if (text.includes('career') || text.includes('counseling')) {\n    field = 'Career Counselling';\n  } else if (text.includes('nutrition') || text.includes('diet')) {\n    field = 'Nutritionist';\n  }\n  item.json.field = field;\n}\nreturn items;"
+      },
+      "id": "e4f5g678-90ab-cdef-1234-567890ef1235",
+      "name": "Classify Field",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ]
+    },
+    {
+      "parameters": {
         "batchSize": 1
       },
       "id": "e5f67890-abcd-ef12-3456-7890ef123456",
@@ -96,7 +113,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 1,
       "position": [
-        1160,
+        1280,
         300
       ]
     },
@@ -106,7 +123,7 @@
         "sheetId": "PLACEHOLDER_SHEET_ID",
         "range": "Sheet1!A:E",
         "operation": "lookup",
-        "lookupColumn": "Post link",
+        "lookupColumn": "Reddit_Post_Link",
         "lookupValue": "={{ $json[\"post_url\"] }}",
         "lookupMatchingMode": "exactMatch",
         "options": {}
@@ -116,7 +133,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.2,
       "position": [
-        1400,
+        1520,
         300
       ],
       "credentials": {
@@ -142,7 +159,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 1,
       "position": [
-        1640,
+        1760,
         300
       ]
     },
@@ -162,14 +179,27 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{{{\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Generate a polite, helpful, and grammatically correct response to this Reddit post. Ensure it's relevant to the topic. Promote Hexpertify.com appropriately if the post relates to mental health, therapy, fitness, career counseling, or nutrition. Optionally include dynamic elements like mentioning the author by username. \\n\\nTitle: \" + $json.title + \"\\nBody: \" + $json.body + \"\\nAuthor: \" + $json.author\n        }\n      ]\n    }\n  ]\n}}}"
+        "jsonBody": "{{{\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Generate two polite, helpful, and grammatically correct responses to this Reddit post: one as a public comment and one as a personalized DM. Ensure they are relevant to the topic. Promote Hexpertify.com appropriately if the post relates to mental health, therapy, fitness, career counseling, or nutrition. Optionally include dynamic elements like mentioning the author by username. Output only JSON: {\\\"comment\\\": \\\"...\\\", \\\"dm\\\": \\\"...\\\"} \\n\\nTitle: \" + $json.title + \"\\nBody: \" + $json.body + \"\\nAuthor: \" + $json.author\n        }\n      ]\n    }\n  ]\n}}}"
       },
       "id": "90abcdef-1234-5678-90ef-1234567890ab",
       "name": "Generate Response with Gemini",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1880,
+        2000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of items) {\n  const text = item.json.candidates[0].content.parts[0].text;\n  item.json.response = JSON.parse(text);\n}\nreturn items;"
+      },
+      "id": "a0b1c2d3-e4f5-6789-abcd-ef0123456789",
+      "name": "Parse Gemini Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
         200
       ]
     },
@@ -183,24 +213,24 @@
         "columns": {
           "mappingColumns": [
             {
-              "name": "Post title",
-              "value": "={{ $json[\"title\"] }}"
-            },
-            {
-              "name": "Post link",
+              "name": "Reddit_Post_Link",
               "value": "={{ $json[\"post_url\"] }}"
             },
             {
-              "name": "Reddit username",
-              "value": "={{ $json[\"author\"] }}"
+              "name": "SubReddit",
+              "value": "={{ $json[\"subreddit\"] }}"
             },
             {
-              "name": "Drafted response",
-              "value": "={{ $json.candidates[0].content.parts[0].text }}"
+              "name": "Field",
+              "value": "={{ $json[\"field\"] }}"
             },
             {
-              "name": "Timestamp",
-              "value": "={{ new Date().toISOString() }}"
+              "name": "Comment",
+              "value": "={{ $json.response.comment }}"
+            },
+            {
+              "name": "Personalized_DM",
+              "value": "={{ $json.response.dm }}"
             }
           ]
         },
@@ -211,7 +241,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.2,
       "position": [
-        2120,
+        2480,
         200
       ],
       "credentials": {
@@ -227,7 +257,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1880,
+        2000,
         400
       ]
     }
@@ -267,6 +297,17 @@
       ]
     },
     "Filter by Keywords": {
+      "main": [
+        [
+          {
+            "node": "Classify Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Field": {
       "main": [
         [
           {
@@ -318,6 +359,17 @@
       ]
     },
     "Generate Response with Gemini": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Response": {
       "main": [
         [
           {
