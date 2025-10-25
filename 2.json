@@ -1,0 +1,359 @@
+{
+  "name": "Simplest Reddit Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/30 * * * *"
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "submission",
+        "operation": "getAll",
+        "subreddit": "IndiaMentalHealth+Psychology_India+IndianGymRats+AskFitnessIndia+TwoXIndia+IndiaCareers+Indian_Academia+developersIndia+IndianWorkplace+cscareerquestions+india+AskIndia+indiasocial+bangalore+Chennai",
+        "sort": "new",
+        "limit": 20
+      },
+      "id": "b2c3d4e5-f678-90ab-cdef-1234567890ef",
+      "name": "Get New Posts",
+      "type": "n8n-nodes-base.reddit",
+      "typeVersion": 1,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "redditOAuth2Api": {
+          "name": "Reddit Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "title",
+              "value": "={{ $json.title }}"
+            },
+            {
+              "name": "body",
+              "value": "={{ $json.selftext }}"
+            },
+            {
+              "name": "author",
+              "value": "={{ $json.author }}"
+            },
+            {
+              "name": "post_url",
+              "value": "={{ $json.url }}"
+            },
+            {
+              "name": "created",
+              "value": "={{ $json.created }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3d4e5f6-7890-abcd-ef12-34567890ef12",
+      "name": "Set Post Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const keywords = ['therapy', 'mental health', 'fitness', 'trainer', 'coach', 'career', 'counseling', 'nutrition', 'diet'];\nreturn items.filter(item => {\n  const text = (item.json.title + ' ' + item.json.body).toLowerCase();\n  return keywords.some(k => text.includes(k.toLowerCase()));\n});"
+      },
+      "id": "d4e5f678-90ab-cdef-1234-567890ef1234",
+      "name": "Filter by Keywords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "e5f67890-abcd-ef12-3456-7890ef123456",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sheetId": "PLACEHOLDER_SHEET_ID",
+        "range": "Sheet1!A:E",
+        "operation": "lookup",
+        "lookupColumn": "Post link",
+        "lookupValue": "={{ $json[\"post_url\"] }}",
+        "lookupMatchingMode": "exactMatch",
+        "options": {}
+      },
+      "id": "f67890ab-cdef-1234-5678-90ef12345678",
+      "name": "Check Duplicate in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $input.all().length === 0 }}",
+              "operation": "isTrue"
+            }
+          ]
+        },
+        "combineOperation": "all"
+      },
+      "id": "7890abcd-ef12-3456-7890-ef1234567890",
+      "name": "IF Post is New",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "PLACEHOLDER_GEMINI_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{{{\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Generate a polite, helpful, and grammatically correct response to this Reddit post. Ensure it's relevant to the topic. Promote Hexpertify.com appropriately if the post relates to mental health, therapy, fitness, career counseling, or nutrition. Optionally include dynamic elements like mentioning the author by username. \\n\\nTitle: \" + $json.title + \"\\nBody: \" + $json.body + \"\\nAuthor: \" + $json.author\n        }\n      ]\n    }\n  ]\n}}}"
+      },
+      "id": "90abcdef-1234-5678-90ef-1234567890ab",
+      "name": "Generate Response with Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sheetId": "PLACEHOLDER_SHEET_ID",
+        "range": "Sheet1!A:E",
+        "operation": "append",
+        "dataMode": "defineBelow",
+        "columns": {
+          "mappingColumns": [
+            {
+              "name": "Post title",
+              "value": "={{ $json[\"title\"] }}"
+            },
+            {
+              "name": "Post link",
+              "value": "={{ $json[\"post_url\"] }}"
+            },
+            {
+              "name": "Reddit username",
+              "value": "={{ $json[\"author\"] }}"
+            },
+            {
+              "name": "Drafted response",
+              "value": "={{ $json.candidates[0].content.parts[0].text }}"
+            },
+            {
+              "name": "Timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "abcdef12-3456-7890-abcd-ef1234567890",
+      "name": "Append to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [
+        2120,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "bcdef123-4567-890a-bcde-f1234567890a",
+      "name": "NoOp (Loop Back)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get New Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Posts": {
+      "main": [
+        [
+          {
+            "node": "Set Post Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Post Data": {
+      "main": [
+        [
+          {
+            "node": "Filter by Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter by Keywords": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate in Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate in Sheet": {
+      "main": [
+        [
+          {
+            "node": "IF Post is New",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Post is New": {
+      "main": [
+        [
+          {
+            "node": "Generate Response with Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "NoOp (Loop Back)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Response with Gemini": {
+      "main": [
+        [
+          {
+            "node": "Append to Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Google Sheet": {
+      "main": [
+        [
+          {
+            "node": "NoOp (Loop Back)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NoOp (Loop Back)": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
+}
