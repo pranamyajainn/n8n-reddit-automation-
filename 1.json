@@ -1,0 +1,566 @@
+{
+  "name": "Reddit Monitor & AI Response Drafter",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "scheduler",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Config",
+          "mode": "name"
+        },
+        "range": "A1:J10",
+        "options": {}
+      },
+      "id": "read_config",
+      "name": "Read Config Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [450, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate config from Google Sheet\nconst configRows = $input.all();\nif (!configRows.length || configRows.length < 2) {\n  throw new Error('Config sheet is empty or missing data');\n}\n\n// Get first data row (row 2, index 1)\nconst headers = configRows[0].json;\nconst dataRow = configRows[1].json;\n\n// Build config object\nconst config = {};\nfor (const key in headers) {\n  const header = headers[key];\n  const value = dataRow[key];\n  config[header] = value;\n}\n\n// Parse and normalize subreddits\nconst subreddits = (config.subreddits || '')\n  .split(',')\n  .map(s => s.trim().replace(/^r\\//i, ''))\n  .filter(s => s.length > 0);\n\n// Parse keywords\nconst keywords = (config.keywords || '')\n  .split(',')\n  .map(k => k.trim().toLowerCase())\n  .filter(k => k.length > 0);\n\n// Parse numeric configs\nconst pollInterval = parseInt(config.poll_interval_minutes || '15');\nconst minAge = parseInt(config.min_post_age_minutes || '2');\nconst maxPosts = parseInt(config.max_posts_per_run || '100');\nconst temperature = parseFloat(config.ai_temperature || '0.2');\n\n// Calculate time window (24 hours ago)\nconst nowSeconds = Math.floor(Date.now() / 1000);\nconst windowStart = nowSeconds - (24 * 60 * 60);\nconst minAgeThreshold = nowSeconds - (minAge * 60);\n\n// Validate required fields\nif (subreddits.length === 0) {\n  throw new Error('No subreddits configured');\n}\nif (keywords.length === 0) {\n  throw new Error('No keywords configured');\n}\n\n// Extract sheet ID from URL\nconst sheetUrl = config.google_sheet_output_url || '';\nconst sheetIdMatch = sheetUrl.match(/\\/d\\/([a-zA-Z0-9-_]+)/);\nif (!sheetIdMatch) {\n  throw new Error('Invalid google_sheet_output_url in config');\n}\nconst sheetId = sheetIdMatch[1];\n\nreturn {\n  json: {\n    subreddits,\n    keywords,\n    pollInterval,\n    minAge,\n    maxPosts,\n    windowStart,\n    minAgeThreshold,\n    sheetId,\n    aiProvider: config.ai_provider || 'huggingface',\n    aiModel: config.ai_model || 'google/flan-t5-small',\n    temperature,\n    includeNsfw: (config.include_nsfw || 'N').toUpperCase() === 'Y',\n    originalConfig: config\n  }\n};"
+      },
+      "id": "parse_config",
+      "name": "Parse & Validate Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://www.reddit.com/api/v1/access_token",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            },
+            {
+              "name": "scope",
+              "value": "read"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "reddit_oauth",
+      "name": "Get Reddit OAuth Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "YOUR_REDDIT_CREDENTIAL_ID",
+          "name": "Reddit OAuth (Basic Auth)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare batch of subreddit requests\nconst config = $('Parse & Validate Config').first().json;\nconst token = $input.first().json.access_token;\n\nif (!token) {\n  throw new Error('Failed to get Reddit OAuth token');\n}\n\nconst outputs = [];\nfor (const subreddit of config.subreddits) {\n  outputs.push({\n    json: {\n      subreddit,\n      limit: Math.min(100, config.maxPosts),\n      accessToken: token,\n      config\n    }\n  });\n}\n\nreturn outputs;"
+      },
+      "id": "build_requests",
+      "name": "Build Subreddit Requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop_subreddits",
+      "name": "Loop Subreddits",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://oauth.reddit.com/r/{{ $json.subreddit }}/new",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "={{ $json.limit }}"
+            },
+            {
+              "name": "raw_json",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch_posts",
+      "name": "Fetch Reddit Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_REDDIT_HEADER_AUTH_ID",
+          "name": "Reddit Bearer Token"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and filter posts by keywords and time\nconst response = $input.first().json;\nconst config = $('Parse & Validate Config').first().json;\n\nif (!response.data || !response.data.children) {\n  return [];\n}\n\nconst posts = response.data.children;\nconst matched = [];\n\nfor (const post of posts) {\n  const data = post.data;\n  \n  // Skip if too new\n  if (data.created_utc > config.minAgeThreshold) {\n    continue;\n  }\n  \n  // Skip if too old\n  if (data.created_utc < config.windowStart) {\n    continue;\n  }\n  \n  // Skip NSFW if not included\n  if (data.over_18 && !config.includeNsfw) {\n    continue;\n  }\n  \n  // Build searchable text\n  const title = (data.title || '').toLowerCase();\n  const selftext = (data.selftext || '').toLowerCase();\n  const searchText = title + ' ' + selftext;\n  \n  // Check keyword matches\n  const matchedKeywords = [];\n  for (const keyword of config.keywords) {\n    if (searchText.includes(keyword)) {\n      matchedKeywords.push(keyword);\n    }\n  }\n  \n  // Skip if no keywords matched\n  if (matchedKeywords.length === 0) {\n    continue;\n  }\n  \n  // Build post object\n  matched.push({\n    json: {\n      post_id: 't3_' + data.id,\n      subreddit: 'r/' + data.subreddit,\n      title: data.title,\n      selftext: data.selftext || '',\n      author: 'u/' + data.author,\n      permalink: data.permalink,\n      url: 'https://reddit.com' + data.permalink,\n      created_utc: data.created_utc,\n      matched_keywords: matchedKeywords.join(';'),\n      config\n    }\n  });\n}\n\nreturn matched;"
+      },
+      "id": "filter_match",
+      "name": "Filter & Match Keywords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.post_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "has_matches",
+      "name": "Has Matches?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.config.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Output",
+          "mode": "name"
+        },
+        "range": "A:A",
+        "options": {}
+      },
+      "id": "read_existing",
+      "name": "Read Existing Post IDs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [2050, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check for duplicates\nconst currentPost = $('Has Matches?').first().json;\nconst existingRows = $input.all();\n\n// Extract existing post IDs (skip header)\nconst existingIds = new Set();\nfor (let i = 1; i < existingRows.length; i++) {\n  const row = existingRows[i].json;\n  const postId = row['0'] || row.post_id; // Handle different formats\n  if (postId) {\n    existingIds.add(postId);\n  }\n}\n\n// Check if current post exists\nconst isDuplicate = existingIds.has(currentPost.post_id);\n\nreturn {\n  json: {\n    ...currentPost,\n    isDuplicate\n  }\n};"
+      },
+      "id": "check_duplicate",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isDuplicate }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "is_new",
+      "name": "Is New Post?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2450, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api-inference.huggingface.co/models/{{ $json.config.aiModel }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "huggingFaceApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"inputs\": \"System: You draft short, kind, on-topic replies for Reddit. Stay neutral, cite no private data, avoid medical/legal advice. Be respectful and avoid promotion. Keep responses 50-120 words.\\n\\nUser: Title: {{ $json.title }}\\nText: {{ $json.selftext.substring(0, 500) }}\\nSubreddit: {{ $json.subreddit }}\\nAuthor: {{ $json.author }}\\nMatched Keywords: {{ $json.matched_keywords }}\\n\\nInstruction: Draft a concise, polite reply (50-120 words). If this touches medical/legal topics, provide safe referral language instead.\",\n  \"parameters\": {\n    \"max_new_tokens\": 200,\n    \"temperature\": {{ $json.config.temperature }}\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "ai_draft",
+      "name": "Generate AI Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2650, 100],
+      "credentials": {
+        "huggingFaceApi": {
+          "id": "YOUR_HUGGINGFACE_CREDENTIAL_ID",
+          "name": "HuggingFace API"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI response\nconst post = $('Is New Post?').first().json;\nconst aiResponse = $input.first().json;\n\nlet aiText = '';\nif (Array.isArray(aiResponse)) {\n  aiText = aiResponse[0]?.generated_text || '';\n} else if (aiResponse.generated_text) {\n  aiText = aiResponse.generated_text;\n} else if (aiResponse[0]?.generated_text) {\n  aiText = aiResponse[0].generated_text;\n}\n\n// Clean up response\naiText = aiText.trim();\nif (aiText.length > 500) {\n  aiText = aiText.substring(0, 500) + '...';\n}\n\nreturn {\n  json: {\n    post_id: post.post_id,\n    subreddit: post.subreddit,\n    title: post.title,\n    author: post.author,\n    url: post.url,\n    created_utc: post.created_utc,\n    matched_keywords: post.matched_keywords,\n    ai_response: aiText || 'Error generating response',\n    response_created_at: new Date().toISOString(),\n    status: aiText ? 'drafted' : 'error',\n    error_message: aiText ? '' : 'AI response empty'\n  }\n};"
+      },
+      "id": "format_output",
+      "name": "Format Output Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2850, 100]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Parse & Validate Config').first().json.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Output",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "post_id": "={{ $json.post_id }}",
+            "subreddit": "={{ $json.subreddit }}",
+            "title": "={{ $json.title }}",
+            "author": "={{ $json.author }}",
+            "url": "={{ $json.url }}",
+            "created_utc": "={{ $json.created_utc }}",
+            "matched_keywords": "={{ $json.matched_keywords }}",
+            "ai_response": "={{ $json.ai_response }}",
+            "response_created_at": "={{ $json.response_created_at }}",
+            "status": "={{ $json.status }}",
+            "error_message": "={{ $json.error_message }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "append_output",
+      "name": "Append to Output Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [3050, 100],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log skipped duplicate\nconst post = $input.first().json;\n\nreturn {\n  json: {\n    post_id: post.post_id,\n    subreddit: post.subreddit,\n    title: post.title,\n    author: post.author,\n    url: post.url,\n    created_utc: post.created_utc,\n    matched_keywords: post.matched_keywords,\n    ai_response: '',\n    response_created_at: new Date().toISOString(),\n    status: 'skipped_duplicate',\n    error_message: 'Post already processed'\n  }\n};"
+      },
+      "id": "log_duplicate",
+      "name": "Log Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 300]
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "id": "rate_limit",
+      "name": "Rate Limit Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1450, 500],
+      "webhookId": "rate-limit-delay"
+    },
+    {
+      "parameters": {},
+      "id": "no_op_end",
+      "name": "No Matches - End",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1850, 500]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Config Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Config Sheet": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate Config": {
+      "main": [
+        [
+          {
+            "node": "Get Reddit OAuth Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Reddit OAuth Token": {
+      "main": [
+        [
+          {
+            "node": "Build Subreddit Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Subreddit Requests": {
+      "main": [
+        [
+          {
+            "node": "Loop Subreddits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Subreddits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Reddit Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Reddit Posts": {
+      "main": [
+        [
+          {
+            "node": "Filter & Match Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & Match Keywords": {
+      "main": [
+        [
+          {
+            "node": "Has Matches?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Matches?": {
+      "main": [
+        [
+          {
+            "node": "Read Existing Post IDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Matches - End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Existing Post IDs": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Is New Post?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Post?": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Draft": {
+      "main": [
+        [
+          {
+            "node": "Format Output Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output Row": {
+      "main": [
+        [
+          {
+            "node": "Append to Output Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Output Sheet": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-10-25T12:00:00.000Z",
+  "versionId": "1"
+}
