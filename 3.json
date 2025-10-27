@@ -1,14 +1,7 @@
-```json
 {
-  "meta": {
-    "instanceId": "cb484ba7b742928a2048bf8829668bed5b5ad9787579adea888f05980292a4a7"
-  },
+  "name": "Reddit Automation with AI Response",
   "nodes": [
     {
-      "id": "d9bae984-2ce7-4f6b-ab53-527ac9dfea3d",
-      "name": "Schedule Trigger",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "position": [680, 320],
       "parameters": {
         "rule": {
           "interval": [
@@ -19,13 +12,13 @@
           ]
         }
       },
-      "typeVersion": 1
+      "id": "d9bae984-2ce7-4f6b-ab53-527ac9dfea3d",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [680, 320]
     },
     {
-      "id": "32ecf73c-b6e9-4bd6-9ecc-d82c4c50d7b5",
-      "name": "Reddit Multi-Subreddit Search",
-      "type": "n8n-nodes-base.reddit",
-      "position": [880, 320],
       "parameters": {
         "subreddit": "IndiaMentalHealth+Psychology_India+IndianGymRats+AskFitnessIndia+TwoXIndia+IndiaCareers+Indian_Academia+developersIndia+IndianWorkplace+cscareerquestions+india+AskIndia+indiasocial+bangalore+Chennai",
         "operation": "search",
@@ -35,14 +28,19 @@
           "limit": 100
         }
       },
-      "credentials": {},
-      "typeVersion": 1
+      "id": "32ecf73c-b6e9-4bd6-9ecc-d82c4c50d7b5",
+      "name": "Reddit Multi-Subreddit Search",
+      "type": "n8n-nodes-base.reddit",
+      "typeVersion": 1,
+      "position": [880, 320],
+      "credentials": {
+        "redditOAuth2Api": {
+          "id": "1",
+          "name": "Reddit account"
+        }
+      }
     },
     {
-      "id": "f3be9af5-b4ff-4f4e-a726-fc05fab94521",
-      "name": "Extract Post Data",
-      "type": "n8n-nodes-base.set",
-      "position": [1080, 320],
       "parameters": {
         "values": {
           "string": [
@@ -69,10 +67,6 @@
             {
               "name": "subreddit",
               "value": "={{ $json.subreddit }}"
-            },
-            {
-              "name": "fullContent",
-              "value": "={{ $json.title + '\n\n' + $json.selftext }}"
             }
           ],
           "number": [
@@ -85,13 +79,13 @@
         "options": {},
         "keepOnlySet": true
       },
-      "typeVersion": 1
+      "id": "f3be9af5-b4ff-4f4e-a726-fc05fab94521",
+      "name": "Extract Post Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1080, 320]
     },
     {
-      "id": "b1dbf78f-c7c6-4ab7-a957-78d58c5e13e3",
-      "name": "Filter Recent Posts",
-      "type": "n8n-nodes-base.if",
-      "position": [1280, 320],
       "parameters": {
         "conditions": {
           "string": [
@@ -108,163 +102,223 @@
           ]
         }
       },
-      "typeVersion": 1
+      "id": "b1dbf78f-c7c6-4ab7-a957-78d58c5e13e3",
+      "name": "Filter Recent Posts",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1280, 320]
     },
     {
-      "id": "check-duplicate",
-      "name": "Check If Already Processed",
-      "type": "n8n-nodes-base.googleSheets",
-      "position": [1480, 320],
       "parameters": {
         "operation": "read",
-        "sheetId": "YOUR_SHEET_ID",
-        "range": "A:C",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Reddit Posts"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
         "options": {}
       },
-      "credentials": {},
-      "typeVersion": 1
+      "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+      "name": "Check If Already Processed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1480, 320],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "2",
+          "name": "Google Sheets account"
+        }
+      }
     },
     {
-      "id": "filter-duplicates",
-      "name": "Filter Duplicates",
-      "type": "n8n-nodes-base.filter",
-      "position": [1680, 320],
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.postURL }}",
-              "value2": "={{ $node['Check If Already Processed'].json.data.map(row => row[1]).join('|') }}",
-              "operation": "notContains"
+              "leftValue": "={{ $json.postURL }}",
+              "rightValue": "={{ $('Check If Already Processed').all().map(item => item.json['Post Link']).includes($json.postURL) ? 'exists' : 'new' }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "typeVersion": 1
+      "id": "b2c3d4e5-f6a7-8901-2345-678901bcdefg",
+      "name": "Filter Duplicates",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [1680, 320]
     },
     {
-      "id": "e303a1aa-ee93-4f8f-b834-19aa8da7fe95",
-      "name": "Generate AI Response",
-      "type": "n8n-nodes-base.openAi",
-      "position": [1880, 320],
       "parameters": {
-        "prompt": "=You are a helpful, empathetic community member responding to a Reddit post.\n\nPost Title: {{ $json.postTitle }}\nPost Content: {{ $json.postBody }}\nAuthor: u/{{ $json.authorUsername }}\n\nGenerate a polite, helpful, and relevant response that:\n- Addresses the author's question or concern\n- Is empathetic and supportive\n- Provides actionable advice if applicable\n- Mentions the author by username naturally\n- Is 2-4 sentences long\n- Avoids being promotional or spammy\n\nResponse:",
+        "model": "gpt-3.5-turbo",
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a helpful, empathetic community member responding to a Reddit post.\n\nPost Title: {{ $json.postTitle }}\nPost Content: {{ $json.postBody }}\nAuthor: u/{{ $json.authorUsername }}\n\nGenerate a polite, helpful, and relevant response that:\n- Addresses the author's question or concern\n- Is empathetic and supportive\n- Provides actionable advice if applicable\n- Mentions the author by username naturally\n- Is 2-4 sentences long\n- Avoids being promotional or spammy\n\nResponse:"
+            }
+          ]
+        },
         "options": {
           "maxTokens": 200,
           "temperature": 0.7
         }
       },
-      "credentials": {},
-      "typeVersion": 1
+      "id": "e303a1aa-ee93-4f8f-b834-19aa8da7fe95",
+      "name": "Generate AI Response",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.3,
+      "position": [1880, 320],
+      "credentials": {
+        "openAiApi": {
+          "id": "3",
+          "name": "OpenAI account"
+        }
+      }
     },
     {
-      "id": "merge-response",
-      "name": "Combine Data",
-      "type": "n8n-nodes-base.merge",
-      "position": [2080, 320],
       "parameters": {
         "mode": "combine",
         "combinationMode": "mergeByPosition"
       },
-      "typeVersion": 2
+      "id": "c3d4e5f6-a7b8-9012-3456-789012cdefgh",
+      "name": "Combine Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [2080, 400]
     },
     {
-      "id": "46280db5-e4b0-4108-958a-763b6410caa0",
-      "name": "Format For Sheet",
-      "type": "n8n-nodes-base.set",
-      "position": [2280, 320],
       "parameters": {
-        "values": {
-          "string": [
+        "assignments": {
+          "assignments": [
             {
+              "id": "1a2b3c4d",
               "name": "Post Title",
-              "value": "={{ $json.postTitle }}"
+              "value": "={{ $json.postTitle }}",
+              "type": "string"
             },
             {
+              "id": "2b3c4d5e",
               "name": "Post Link",
-              "value": "={{ $json.postURL }}"
+              "value": "={{ $json.postURL }}",
+              "type": "string"
             },
             {
+              "id": "3c4d5e6f",
               "name": "Reddit Username",
-              "value": "={{ $json.authorUsername }}"
+              "value": "={{ $json.authorUsername }}",
+              "type": "string"
             },
             {
+              "id": "4d5e6f7g",
               "name": "Drafted Response",
-              "value": "={{ $json.text || $json.choices[0].text }}"
+              "value": "={{ $json.message?.content || $json.text || $json.choices?.[0]?.message?.content }}",
+              "type": "string"
             },
             {
+              "id": "5e6f7g8h",
               "name": "Timestamp",
-              "value": "={{ $now.toISO() }}"
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
             },
             {
+              "id": "6f7g8h9i",
               "name": "Subreddit",
-              "value": "={{ $json.subreddit }}"
+              "value": "={{ $json.subreddit }}",
+              "type": "string"
             }
           ]
         },
-        "options": {},
-        "keepOnlySet": true
+        "options": {}
       },
-      "typeVersion": 1
+      "id": "46280db5-e4b0-4108-958a-763b6410caa0",
+      "name": "Format For Sheet",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2280, 400]
     },
     {
-      "id": "write-to-sheet",
-      "name": "Write to Google Sheet",
-      "type": "n8n-nodes-base.googleSheets",
-      "position": [2480, 320],
       "parameters": {
         "operation": "append",
-        "sheetId": "YOUR_SHEET_ID",
-        "range": "A:F",
-        "options": {
-          "valueInputMode": "USER_ENTERED"
-        }
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Reddit Posts"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Post Title": "={{ $json['Post Title'] }}",
+            "Post Link": "={{ $json['Post Link'] }}",
+            "Reddit Username": "={{ $json['Reddit Username'] }}",
+            "Drafted Response": "={{ $json['Drafted Response'] }}",
+            "Timestamp": "={{ $json['Timestamp'] }}",
+            "Subreddit": "={{ $json['Subreddit'] }}"
+          }
+        },
+        "options": {}
       },
-      "credentials": {},
-      "typeVersion": 1
+      "id": "d4e5f6a7-b8c9-0123-4567-890123defghi",
+      "name": "Write to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2480, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "2",
+          "name": "Google Sheets account"
+        }
+      }
     },
     {
-      "id": "error-notification",
-      "name": "Send Error Email",
-      "type": "n8n-nodes-base.gmail",
-      "position": [2280, 520],
       "parameters": {
-        "operation": "send",
-        "message": {
-          "to": "admin@example.com",
-          "subject": "Reddit Automation Error",
-          "body": "=Error occurred at {{ $now.toISO() }}\n\nDetails: {{ $json.error }}"
-        }
+        "content": "## Reddit Automation Workflow\n✓ Monitors 14 Indian subreddits every 2 hours\n✓ Tracks keywords: mental health, wellness, career, fitness, workplace\n✓ Filters posts from last 24 hours with content\n✓ Checks for duplicates against Google Sheet\n✓ Generates AI-powered contextual responses\n✓ Stores: title, link, username, response, timestamp\n\n**Configure:** Update subreddits in Reddit node, keywords in search, Sheet ID in Google Sheets nodes",
+        "height": 280,
+        "width": 507
       },
-      "credentials": {},
-      "typeVersion": 1,
-      "onError": "continueRegularOutput"
-    },
-    {
       "id": "4b560620-a101-4566-b066-4ce3f44d8b0c",
       "name": "Sticky Note1",
       "type": "n8n-nodes-base.stickyNote",
-      "position": [120, 180],
-      "parameters": {
-        "width": 507,
-        "height": 280,
-        "content": "## Reddit Automation Workflow\n✓ Monitors 14 Indian subreddits every 2 hours\n✓ Tracks keywords: mental health, wellness, career, fitness, workplace\n✓ Filters posts from last 24 hours with content\n✓ Checks for duplicates against Google Sheet\n✓ Generates AI-powered contextual responses\n✓ Stores: title, link, username, response, timestamp\n✓ Error handling with email notifications\n\n**Configure:** Update subreddits in Reddit node, keywords in search, Sheet ID in Google Sheets nodes, admin email in error node"
-      },
-      "typeVersion": 1
+      "typeVersion": 1,
+      "position": [120, 180]
     },
     {
-      "id": "config-note",
+      "parameters": {
+        "content": "## Setup Instructions\n1. Reddit OAuth: Add credentials in n8n\n2. OpenAI: Add API key in credentials\n3. Google Sheets: Create sheet with headers:\n   Post Title | Post Link | Reddit Username | Drafted Response | Timestamp | Subreddit\n4. Replace YOUR_SHEET_ID with actual Google Sheet ID\n5. Adjust schedule trigger interval as needed\n6. Modify keywords in Reddit node search field",
+        "height": 220,
+        "width": 507
+      },
+      "id": "e5f6a7b8-c9d0-1234-5678-901234efghij",
       "name": "Configuration Note",
       "type": "n8n-nodes-base.stickyNote",
-      "position": [120, 480],
-      "parameters": {
-        "width": 507,
-        "height": 220,
-        "content": "## Setup Instructions\n1. Reddit OAuth: Add credentials in n8n (client_id, client_secret)\n2. OpenAI: Add API key in credentials\n3. Google Sheets: Create sheet with headers: Post Title | Post Link | Reddit Username | Drafted Response | Timestamp | Subreddit\n4. Replace YOUR_SHEET_ID with actual Google Sheet ID\n5. Update admin email in error node\n6. Adjust schedule trigger interval as needed\n7. Modify keywords in Reddit node search field"
-      },
-      "typeVersion": 1
+      "typeVersion": 1,
+      "position": [120, 480]
     }
   ],
+  "pinData": {},
   "connections": {
     "Schedule Trigger": {
       "main": [
@@ -328,6 +382,11 @@
             "node": "Generate AI Response",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Combine Data",
+            "type": "main",
+            "index": 1
           }
         ]
       ]
@@ -364,12 +423,16 @@
           }
         ]
       ]
-    },
-    "Write to Google Sheet": {
-      "main": [
-        []
-      ]
     }
-  }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "1",
+  "meta": {
+    "instanceId": "cb484ba7b742928a2048bf8829668bed5b5ad9787579adea888f05980292a4a7"
+  },
+  "tags": []
 }
-```
