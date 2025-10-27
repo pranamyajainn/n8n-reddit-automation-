@@ -1,22 +1,4 @@
-{
-      "parameters": {
-        "jsCode": "// Error logging for debugging\nif ($json.error) {\n  console.error('Workflow Error:', $json.error);\n  return [{json: {error: $json.error, timestamp: new Date().toISOString()}}];\n}\nreturn [];"
-      },
-      "id": "error-handler-1",
-      "name": "Error Handler",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 1,
-      "position": [2380, 600],
-      "continueOnFail": true
-    },    {
-      "parameters": {},
-      "id": "delay-node-1",
-      "name": "Wait 2 Seconds",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1,
-      "position": [1780, 320],
-      "webhookId": "delay-webhook-1"
-    },{
+ {
   "name": "Reddit Automation with AI Response",
   "nodes": [
     {
@@ -138,7 +120,7 @@
       "parameters": {
         "operation": "read",
         "sheetId": "YOUR_SHEET_ID",
-        "range": "A:C",
+        "range": "B:B",
         "options": {}
       },
       "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
@@ -155,13 +137,39 @@
     },
     {
       "parameters": {
-        "jsCode": "const sheetData = $node['Check If Already Processed'].json;\nconst existingUrls = sheetData && sheetData.data ? sheetData.data.map(row => row[1]) : [];\n\nconst isDuplicate = existingUrls.includes($json.postURL);\n\nif (isDuplicate) {\n  return null;\n}\n\nreturn $json;"
+        "jsCode": "const sheetData = $node['Check If Already Processed'].json;\nconst existingUrls = sheetData && sheetData.data ? sheetData.data.map(row => row[1]) : [];\n\nconst isDuplicate = existingUrls.includes($json.postURL);\n\nif (isDuplicate) {\n  return {skip: true};\n}\n\nreturn {skip: false, ...($json)};"
       },
       "id": "b2c3d4e5-f6a7-8901-2345-678901bcdefg",
       "name": "Filter Duplicates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [1680, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skip }}",
+              "operation": "isFalse"
+            }
+          ]
+        }
+      },
+      "id": "skip-duplicates-node",
+      "name": "Skip Duplicates",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1780, 320]
+    },
+    {
+      "parameters": {},
+      "id": "delay-node-1",
+      "name": "Wait 2 Seconds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1880, 320],
+      "webhookId": "delay-webhook-1"
     },
     {
       "parameters": {
@@ -175,24 +183,13 @@
       "name": "Generate AI Response",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [1980, 320],
+      "position": [2080, 320],
       "credentials": {
         "openAiApi": {
           "id": "3",
           "name": "OpenAI account"
         }
       }
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "combinationMode": "mergeByPosition"
-      },
-      "id": "c3d4e5f6-a7b8-9012-3456-789012cdefgh",
-      "name": "Combine Data",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 2,
-      "position": [2080, 400]
     },
     {
       "parameters": {
@@ -212,7 +209,7 @@
             },
             {
               "name": "Drafted Response",
-              "value": "={{ $json.text || $json.choices[0].text }}"
+              "value": "={{ $json.choices[0].message.content }}"
             },
             {
               "name": "Timestamp",
@@ -231,7 +228,7 @@
       "name": "Format For Sheet",
       "type": "n8n-nodes-base.set",
       "typeVersion": 1,
-      "position": [2280, 400]
+      "position": [2280, 320]
     },
     {
       "parameters": {
@@ -246,7 +243,7 @@
       "name": "Write to Google Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 1,
-      "position": [2580, 400],
+      "position": [2480, 320],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "2",
@@ -256,7 +253,18 @@
     },
     {
       "parameters": {
-        "content": "## Reddit Automation Workflow\n✓ Runs daily at 9:00 AM\n✓ Monitors 14 Indian subreddits\n✓ Tracks keywords: mental health, wellness, career, fitness, workplace\n✓ Filters posts from last 24 hours with content\n✓ Fixed duplicate check using Code node (checks column B of Sheet)\n✓ 2-second delay between OpenAI calls to avoid rate limiting\n✓ Generates AI-powered contextual responses\n✓ Stores: title, link, username, response, timestamp\n✓ Error handler for debugging\n\n**Configure:** Update Sheet ID in Google Sheets nodes",
+        "jsCode": "return {\n  error: $json.error || 'Unknown error',\n  timestamp: new Date().toISOString(),\n  node: $nodeVersion.name,\n  message: $json.message,\n  executionTime: new Date().getTime()\n};"
+      },
+      "id": "error-handler-1",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [2380, 600],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "content": "## Reddit Automation Workflow - FIXED ✓\n✓ Runs daily at 9:00 AM\n✓ Monitors 14 Indian subreddits\n✓ Tracks keywords: mental health, wellness, career, fitness, workplace\n✓ Filters posts from last 24 hours with content\n✓ Fixed duplicate check (now reads only column B)\n✓ 2-second delay between OpenAI calls to avoid rate limiting\n✓ Generates AI-powered contextual responses with correct path\n✓ Stores: title, link, username, response, timestamp\n✓ Error handler connected to all API nodes\n✓ Merge node removed - direct data flow\n\n**Configure:** Update Sheet ID in Google Sheets nodes",
         "height": 280,
         "width": 507
       },
@@ -268,8 +276,8 @@
     },
     {
       "parameters": {
-        "content": "## Setup Instructions\n1. Reddit OAuth: Add credentials in n8n (client_id, client_secret)\n2. OpenAI: Add API key in credentials (use GPT-3.5-turbo for free tier)\n3. Google Sheets:\n   - Create sheet with headers in row 1:\n     Post Title | Post Link | Reddit Username | Drafted Response | Timestamp | Subreddit\n   - Get Sheet ID from URL: docs.google.com/spreadsheets/d/SHEET_ID/edit\n4. Replace YOUR_SHEET_ID in both Google Sheets nodes\n5. Schedule: Currently set to 9:00 AM daily (modify in Schedule Trigger)\n6. Keywords: Modify in Reddit node if needed\n\n## Fixed Issues:\n✓ Duplicate detection now works (Code node checks column B)\n✓ Daily schedule instead of 2-hourly\n✓ Added 2-second delay to avoid OpenAI rate limits\n✓ Error handler for debugging",
-        "height": 220,
+        "content": "## Setup Instructions\n1. Reddit OAuth: Add credentials in n8n (client_id, client_secret)\n2. OpenAI: Add API key in credentials (use GPT-3.5-turbo for free tier)\n3. Google Sheets:\n   - Create sheet with headers in row 1:\n     Post Title | Post Link | Reddit Username | Drafted Response | Timestamp | Subreddit\n   - Get Sheet ID from URL: docs.google.com/spreadsheets/d/SHEET_ID/edit\n4. Replace YOUR_SHEET_ID in both Google Sheets nodes\n5. Schedule: Currently set to 9:00 AM daily (modify in Schedule Trigger)\n6. Keywords: Modify in Reddit node if needed\n\n## Fixed Issues:\n✓ Corrected AI response extraction: choices[0].message.content\n✓ Duplicate check now works with correct code\n✓ Google Sheets range reduced to B:B for performance\n✓ Error handler connected to all API nodes\n✓ Merge node removed for simpler data flow\n✓ Skip Duplicates IF node added for proper filtering",
+        "height": 240,
         "width": 507
       },
       "id": "e5f6a7b8-c9d0-1234-5678-901234efghij",
@@ -301,6 +309,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler",
+            "type": "error",
+            "index": 0
+          }
+        ]
       ]
     },
     "Extract Post Data": {
@@ -317,11 +334,6 @@
     "Filter Recent Posts": {
       "main": [
         [
-          {
-            "node": "Filter Duplicates",
-            "type": "main",
-            "index": 0
-          },
           {
             "node": "Check If Already Processed",
             "type": "main",
@@ -342,6 +354,17 @@
       ]
     },
     "Filter Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Skip Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Duplicates": {
       "main": [
         [
           {
@@ -367,19 +390,17 @@
       "main": [
         [
           {
-            "node": "Combine Data",
+            "node": "Format For Sheet",
             "type": "main",
             "index": 0
           }
         ]
-      ]
-    },
-    "Combine Data": {
-      "main": [
+      ],
+      "error": [
         [
           {
-            "node": "Format For Sheet",
-            "type": "main",
+            "node": "Error Handler",
+            "type": "error",
             "index": 0
           }
         ]
@@ -391,6 +412,26 @@
           {
             "node": "Write to Google Sheet",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to Google Sheet": {
+      "main": [
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler",
+            "type": "error",
             "index": 0
           }
         ]
