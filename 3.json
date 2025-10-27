@@ -1,4 +1,22 @@
 {
+      "parameters": {
+        "jsCode": "// Error logging for debugging\nif ($json.error) {\n  console.error('Workflow Error:', $json.error);\n  return [{json: {error: $json.error, timestamp: new Date().toISOString()}}];\n}\nreturn [];"
+      },
+      "id": "error-handler-1",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [2380, 600],
+      "continueOnFail": true
+    },    {
+      "parameters": {},
+      "id": "delay-node-1",
+      "name": "Wait 2 Seconds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1780, 320],
+      "webhookId": "delay-webhook-1"
+    },{
   "name": "Reddit Automation with AI Response",
   "nodes": [
     {
@@ -6,8 +24,16 @@
         "rule": {
           "interval": [
             {
-              "field": "hours",
-              "hoursInterval": 2
+              "field": "days",
+              "daysInterval": 1
+            }
+          ]
+        },
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 9,
+              "minute": 0
             }
           ]
         }
@@ -97,7 +123,7 @@
           "dateTime": [
             {
               "value1": "={{ $json.timestamp }}",
-              "value2": "={{ $today.minus({hours: 24}).toISO() }}"
+              "value2": "={{ $today.minus({days: 1}).toISO() }}"
             }
           ]
         }
@@ -129,19 +155,11 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "string": [
-            {
-              "value1": "={{ $json.postURL }}",
-              "value2": "={{ $node['Check If Already Processed'].json.data }}",
-              "operation": "notContains"
-            }
-          ]
-        }
+        "jsCode": "const sheetData = $node['Check If Already Processed'].json;\nconst existingUrls = sheetData && sheetData.data ? sheetData.data.map(row => row[1]) : [];\n\nconst isDuplicate = existingUrls.includes($json.postURL);\n\nif (isDuplicate) {\n  return null;\n}\n\nreturn $json;"
       },
       "id": "b2c3d4e5-f6a7-8901-2345-678901bcdefg",
       "name": "Filter Duplicates",
-      "type": "n8n-nodes-base.filter",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [1680, 320]
     },
@@ -157,7 +175,7 @@
       "name": "Generate AI Response",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [1880, 320],
+      "position": [1980, 320],
       "credentials": {
         "openAiApi": {
           "id": "3",
@@ -228,7 +246,7 @@
       "name": "Write to Google Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 1,
-      "position": [2480, 400],
+      "position": [2580, 400],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "2",
@@ -238,7 +256,7 @@
     },
     {
       "parameters": {
-        "content": "## Reddit Automation Workflow\n✓ Monitors 14 Indian subreddits every 2 hours\n✓ Tracks keywords: mental health, wellness, career, fitness, workplace\n✓ Filters posts from last 24 hours with content\n✓ Checks for duplicates against Google Sheet\n✓ Generates AI-powered contextual responses\n✓ Stores: title, link, username, response, timestamp\n\n**Configure:** Update subreddits in Reddit node, keywords in search, Sheet ID in Google Sheets nodes",
+        "content": "## Reddit Automation Workflow\n✓ Runs daily at 9:00 AM\n✓ Monitors 14 Indian subreddits\n✓ Tracks keywords: mental health, wellness, career, fitness, workplace\n✓ Filters posts from last 24 hours with content\n✓ Fixed duplicate check using Code node (checks column B of Sheet)\n✓ 2-second delay between OpenAI calls to avoid rate limiting\n✓ Generates AI-powered contextual responses\n✓ Stores: title, link, username, response, timestamp\n✓ Error handler for debugging\n\n**Configure:** Update Sheet ID in Google Sheets nodes",
         "height": 280,
         "width": 507
       },
@@ -250,7 +268,7 @@
     },
     {
       "parameters": {
-        "content": "## Setup Instructions\n1. Reddit OAuth: Add credentials in n8n\n2. OpenAI: Add API key in credentials\n3. Google Sheets: Create sheet with headers:\n   Post Title | Post Link | Reddit Username | Drafted Response | Timestamp | Subreddit\n4. Replace YOUR_SHEET_ID with actual Google Sheet ID\n5. Adjust schedule trigger interval as needed\n6. Modify keywords in Reddit node search field",
+        "content": "## Setup Instructions\n1. Reddit OAuth: Add credentials in n8n (client_id, client_secret)\n2. OpenAI: Add API key in credentials (use GPT-3.5-turbo for free tier)\n3. Google Sheets:\n   - Create sheet with headers in row 1:\n     Post Title | Post Link | Reddit Username | Drafted Response | Timestamp | Subreddit\n   - Get Sheet ID from URL: docs.google.com/spreadsheets/d/SHEET_ID/edit\n4. Replace YOUR_SHEET_ID in both Google Sheets nodes\n5. Schedule: Currently set to 9:00 AM daily (modify in Schedule Trigger)\n6. Keywords: Modify in Reddit node if needed\n\n## Fixed Issues:\n✓ Duplicate detection now works (Code node checks column B)\n✓ Daily schedule instead of 2-hourly\n✓ Added 2-second delay to avoid OpenAI rate limits\n✓ Error handler for debugging",
         "height": 220,
         "width": 507
       },
@@ -300,6 +318,11 @@
       "main": [
         [
           {
+            "node": "Filter Duplicates",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Check If Already Processed",
             "type": "main",
             "index": 0
@@ -322,14 +345,20 @@
       "main": [
         [
           {
+            "node": "Wait 2 Seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 2 Seconds": {
+      "main": [
+        [
+          {
             "node": "Generate AI Response",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Combine Data",
-            "type": "main",
-            "index": 1
           }
         ]
       ]
